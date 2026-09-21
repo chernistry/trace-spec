@@ -1,13 +1,13 @@
 # TRACE Specification: Trust, Runtime Attestation, and Compliance Evidence
 
-| Field                    | Value                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------ |
-| Version                  | 0.2: Draft                                                                                       |
-| Status                   | RFC: Request for Comments                                                                        |
-| Authors                  | Imran Siddique, Rishabh Poddar, Aaron Fulkerson (OPAQUE Systems)                                 |
-| Target announcement      | Confidential Computing Summit, San Francisco: 23 June 2026                                       |
-| Reference implementation | [agentrust-io/cmcp](https://github.com/agentrust-io/cmcp): Confidential MCP                      |
-| License                  | Community Specification License 1.0 (see [LICENSE](https://trace.agentrust-io.com/spec/LICENSE)) |
+| Field                    | Value                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Version                  | 0.2: Draft                                                                                                        |
+| Status                   | RFC: Request for Comments                                                                                         |
+| Authors                  | Imran Siddique, Rishabh Poddar, Aaron Fulkerson (OPAQUE Systems)                                                  |
+| Target announcement      | Confidential Computing Summit, San Francisco: 23 June 2026                                                        |
+| Reference implementation | [agentrust-io/cmcp](https://github.com/agentrust-io/cmcp): Confidential MCP                                       |
+| License                  | Community Specification License 1.0 (see [LICENSE](https://github.com/agentrust-io/trace-spec/blob/main/LICENSE)) |
 
 > **Note:** This is a pre-ratification draft. Fields, wire formats, and conformance requirements are subject to change before v1.0. Send feedback to: open an issue on this repository.
 
@@ -189,6 +189,28 @@ Rule 3 is what makes the block safe to add. A reference that could invalidate a 
 **`resolver` names who must retain, not who adjudicates.** The field is a retention undertaking: it identifies the party obliged to keep `id` resolvable, alongside `retention` as the period they undertake to keep it so. It is not a verification authority, and the two read as the same field until they are separated. The conformance suite refuses the opposite arrangement for a different field: TR-POL-003 takes its resolver from the caller and never derives it from the record, because a record that names its own checker can name one that agrees with it. Naming yourself as the party who must retain an artifact is ordinary and non-circular; naming yourself as the party who decides whether it is true is the circularity that rule refuses. An operator naming themselves as `resolver` for their own artifact is therefore within this section and would still be refused under TR-POL-003's rule, and both are correct. Rule 4 is aimed at a producer who can name no obliged party at all, not at one who is that party.
 
 **Unsettled, and deliberately named rather than hidden.** `retention` states an undertaking and nothing in this specification enforces it. A reference is worth only the ability to resolve it later, and transparency-log practice shows that gap is real rather than theoretical: a record can remain valid and become unreachable when the index that addressed it is removed. §7 open question 3 covers the same ground for `transparency` and the two should be resolved together.
+
+#### 3.1.3 `delegation.parent_record_hash`: what the digest covers
+
+`delegation.parent_record_hash` is the field a verifier walks to reconstruct a delegation chain. The schema gives it a pattern and calls it a "digest of the parent hop's Trust Record", which does not say which bytes are digested, and at least three readings of that phrase produce different digests.
+
+The preimage is the **complete parent record as published, with its `signature` member present**, canonicalised with RFC 8785 (JCS):
+
+```
+delegation.parent_record_hash = "sha256:" + hex(SHA-256(JCS(parent_record)))
+```
+
+with `sha384:` and SHA-384 as the permitted alternative, per the schema pattern.
+
+1. A producer MUST compute `parent_record_hash` over the complete parent record, including its `signature` member where the profile embeds one, canonicalised with RFC 8785. No member is removed, blanked or reordered before digesting.
+1. A verifier MUST recompute the digest the same way, over the parent record as it received it, and MUST NOT reconstruct or re-serialise the parent by any other route.
+1. The digest algorithm named in the prefix MUST match the algorithm used, and a verifier MUST reject a record whose prefix names an algorithm it does not support rather than fall back to another.
+
+**This is not the canonical form defined in §3.2.2, and the difference is deliberate.** §3.2.2 constructs the signature pre-image with the `signature` field *absent*, because a signature cannot cover itself. A chain digest has no such constraint and gains from not having one: digesting the record as published means a verifier digests exactly what it fetched, with no member-removal step to get wrong, and the parent's signature is then covered by the chain digest as well as checked on its own. For an enveloping-signature profile, where the record carries no `signature` member, the two pre-images coincide.
+
+The other two readings fail for concrete reasons. Digesting the file's raw bytes makes the value sensitive to whitespace and key order, so it breaks the first time a record passes through a system that re-serialises it. Digesting with `signature` removed adds a second canonicalisation rule for implementers to get wrong and buys nothing.
+
+**A near-miss here passes every vector but one.** The RFC 8785 key ordering that §3.2.2 describes, and the code-point ordering that `sort_keys=True` produces in several JSON libraries, agree across the Basic Multilingual Plane and diverge only once a key contains a supplementary-plane character. An implementation that takes the shortcut therefore computes correct chain digests for ASCII records indefinitely and produces an unverifiable chain the first time such a key appears. `examples/delegation-link/24-parent-key-supplementary-plane.json` is the vector that catches it: its parent record carries a key outside the Basic Multilingual Plane, where the two orderings disagree. Every other record's keys in that corpus are ASCII.
 
 ### 3.2 Wire format
 
@@ -384,6 +406,51 @@ An action receipt profile can build on the external execution evidence rules in 
 
 A signed controller rejection is valid negative evidence: it can prove that the controller rejected the action request under a trusted key and session binding. It is not a TRACE verification failure unless the receipt itself is malformed, untrusted, stale, out of order, or not bound to the expected call. Conversely, a signed acceptance receipt is not proof of physical completion or functional-safety certification unless the external issuer and profile explicitly make, and the verifier is configured to trust, that stronger claim.
 
+#### 3.3.4 Disclosed gaps in a receipt chain
+
+Under a profile requiring action receipts, completeness of the receipt chain is the load-bearing property. No emitter can be made gap-proof: any writer operating asynchronously has a window in which a crash loses a tail of receipts. A specification that offers only "complete" and "broken" therefore rewards concealment, because an operator who backfills a lost receipt scores better than one who reports the loss.
+
+A `GapDisclosure` is a signed statement, occupying a position in the receipt chain, that receipts which would have occupied that position were never emitted. It is negative evidence contributed by the emitter about itself. It does not establish that the missing receipts ever existed, how many were lost, or that the emitter did not omit them selectively; what the splice proves is where the gap sits in the chain, and nothing else.
+
+**Structure.** A `GapDisclosure` is a chain element. It MUST carry:
+
+- `type`, the value `GapDisclosure/1.0`;
+- `previous_receipt_hash`, the digest of the chain element immediately preceding the gap, in the same form and computed the same way as on a receipt;
+- `session_id`, naming the receipt stream the disclosure belongs to;
+- `issuer_key_id`, identifying the key that signed it;
+- `signature`, over the canonical form of the disclosure with the signature field removed.
+
+It MAY carry `cause` and `receipts_lost_estimate`. Both are descriptive self-reports and nothing more: the receipts an estimate counts are absent by definition, so nothing in the chain corroborates either field. A verifier MUST NOT treat them as established, MUST NOT condition any outcome on their values, and MUST NOT reject a disclosure because either disagrees with other evidence. They exist to be reported, not relied on.
+
+**Stream binding.** The `session_id` is covered by the signature, and a verifier MUST reject a disclosure whose `session_id` does not match the receipt stream under verification. Without that comparison, a disclosure honestly signed for one stream is a transplantable excuse for a gap in any other: replay, in the position where replay is hardest to distinguish from recovery.
+
+**Chain binding.** A `GapDisclosure` MUST be spliced into the receipt chain at the point of resumption. Concretely, its `previous_receipt_hash` MUST name a chain element that is present, and the next chain element emitted after resumption MUST carry a `previous_receipt_hash` naming the disclosure. A disclosure that is not linked from both directions has not been sealed into the chain and MUST NOT be treated as covering anything.
+
+That requirement has a window in which it cannot be met honestly: at the live tail of the chain, after the failure and before resumption, the sealing successor does not exist yet. A verifier meeting a tail disclosure whose other checks pass MUST NOT report `receipt_gap_disclosed`, and MUST NOT report `receipt_invalid` either: the absence of a successor is an inability to check, not evidence of a defect, the same principle as section 3.3.2's treatment of unknown issuer keys. It MUST surface the disclosure as unverified with a distinct advisory, and re-verification after the chain resumes upgrades or impeaches it on the seal that then exists. This matters adversarially: a chain truncated immediately after a disclosure is indistinguishable from an honest tail, so whatever a verifier grants the honest tail, it grants the truncation.
+
+Gap boundaries MUST NOT be expressed as timestamps or as emitter-assigned sequence numbers. Both are signed by the same key that signs the receipts, so neither constrains an emitter that is misrepresenting the gap. The chain links are the boundaries.
+
+**Issuer.** A `GapDisclosure` MUST be signed by the key that signed the chain element its `previous_receipt_hash` names, or by an ancestor of that key in the hierarchy of section 3.2.1. A disclosure signed by any other key MUST be treated as invalid, whether or not that key is otherwise trusted. A gap is the moment at which introducing an unrelated key is most useful to an adversary and least distinguishable from recovery.
+
+**Consecutive disclosures.** A `GapDisclosure` MAY name another `GapDisclosure` as its predecessor, which represents an emitter that failed again before emitting a receipt. A verifier MUST report the number of consecutive disclosures. It MUST NOT reject solely on that basis: an emitter failing repeatedly and disclosing each time is behaving better than one that is silent.
+
+**Verifier outcomes.** The action-receipt outcome `receipt_missing_required` is narrowed, and the outcome `receipt_gap_disclosed` is added beside it:
+
+| Outcome                    | Meaning                                                                                                                             |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `receipt_gap_disclosed`    | Required receipts are absent, and a valid `GapDisclosure` occupies their position in the chain. Emitter-attested negative evidence. |
+| `receipt_missing_required` | Required receipts are absent and no valid disclosure occupies their position. Silent, and treated as presumptively adversarial.     |
+
+A verifier MUST report `receipt_gap_disclosed` distinctly from `receipt_missing_required`. Collapsing them discards the distinction the disclosure was issued to make.
+
+Whether `receipt_gap_disclosed` is accepted or rejected MUST be a verifier policy input, not implementation-defined behaviour. A relying party evaluating a payment authorisation and one evaluating a telemetry batch will reasonably differ, and neither should have to change verifier to express that. One bound on that policy is not negotiable: a profile that requires independently proven completeness of the receipt chain MUST NOT accept `receipt_gap_disclosed` as satisfying it. A disclosed gap is an attested absence, not a proof of completeness, and no policy setting may promote the former into the latter.
+
+A `GapDisclosure` that fails signature verification, is not bound into the chain from both directions, names a session other than the stream under verification, is signed by a key outside the permitted set, or whose claimed gap is contradicted by chain elements that are in fact present, MUST yield `receipt_invalid` rather than falling back to `receipt_missing_required`. A forged, transplanted or self-contradictory disclosure is worse evidence than no disclosure: it is an attempt to convert silence into attestation, and the attempt itself is a finding.
+
+**Reporting.** A verification result MUST report each disclosed gap individually, carrying at minimum the linked predecessor, the number of consecutive disclosures, and the `cause` when one was supplied. Reducing disclosed gaps to a count or a boolean discards exactly the detail a relying party's policy needs.
+
+The conformance vectors for this section are `examples/action-receipts/gap-disclosure/`: twenty fixtures, two independent vectors per rule, with a generator that reproduces them byte for byte, and the live-tail contrast pinned by a dedicated test.
+
 ### 3.4 Scope
 
 TRACE governs any confidential workload: AI agent execution, regulated data processing, sovereign compute, secure multi-party computation. AI agents are the forcing function and the first reference profile, not the limit of the standard.
@@ -484,9 +551,7 @@ ______________________________________________________________________
 
 **The Linux Foundation**, as its own series: "TRACE Specification, a Series of LF Projects, LLC". Formation is in progress; on completion, governance transitions to a Technical Steering Committee as defined in `CHARTER.md`, and spec, IP, trademark, and conformance mark sit with the series.
 
-This supersedes the earlier proposal to split the technical workstream to CoSAI and the spec, IP and trademark to the Linux Foundation entity hosting the Model Context Protocol. That arrangement made TRACE a guest of two hosts, neither of which owned the conformance mark outright.
-
-Other standards bodies participate as technical-liaison partners: OpenSSF (SLSA stewardship), CNCF (SPIFFE/SPIRE stewardship), IETF (RATS, EAT, SCITT, EAR working groups), CoSAI (WS4 interoperability).
+Other standards bodies participate as technical-liaison partners: OpenSSF (SLSA stewardship), CNCF (SPIFFE/SPIRE stewardship), IETF (RATS, EAT, SCITT, EAR working groups).
 
 ### 6.2 Target contributing organizations
 
@@ -507,7 +572,7 @@ ______________________________________________________________________
 
 These need input before v1.0. Two are now resolved and are kept here, marked, so a reader tracking them can see how they landed.
 
-1. ~~**Host organization.** CoSAI, Linux Foundation, or a federated arrangement?~~ **Resolved:** the Linux Foundation, as TRACE's own series. See §6.1.
+1. ~~**Host organization.** Which organization hosts the specification?~~ **Resolved:** the Linux Foundation, as TRACE's own series. See §6.1.
 1. **AI-agent profile vs general profile.** One inclusive profile or split agent execution and generic confidential workload from day one?
 1. **Transparency log operator(s).** One canonical SCITT log, federated logs, or BYO with conformance criteria?
 1. **Policy language.** TRACE binds a policy *hash*. Does v1.0 also specify a policy *language* (Cedar, Rego, custom DSL), or stay language-agnostic?

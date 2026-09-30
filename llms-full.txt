@@ -16,7 +16,7 @@ TRACE specifies the record, anchoring protocol and verification rules that tie a
 
 TL;DR
 
-Spec v0.2 and the [agentrust-trace](https://pypi.org/project/agentrust-trace/) 0.10.0 reference library sign and verify records in software with no cloud account, and a v0.2 signature proves who produced a record and that it has not changed while every hardware field in it is still the producer's claim. The proposed [runtime evidence profile](https://trace.agentrust-io.com/docs/rfcs/runtime-evidence-profile/index.md) grades inlined quotes as platform-attested or attested, and the attested grade is specified but not yet demonstrated.
+Spec v0.2 and the [agentrust-trace](https://pypi.org/project/agentrust-trace/) 0.11.0 reference library sign and verify records in software with no cloud account, and a v0.2 signature proves who produced a record and that it has not changed while every hardware field in it is still the producer's claim. The proposed [runtime evidence profile](https://trace.agentrust-io.com/docs/rfcs/runtime-evidence-profile/index.md) grades inlined quotes as platform-attested or attested, and the attested grade is specified but not yet demonstrated.
 
 - **Run it**
 
@@ -79,7 +79,7 @@ The specification is a **Developer Preview**. v0.2 is current and published with
 
 TRACE Specification is an [LF Project](https://www.linuxfoundation.org/), hosted at the Linux Foundation as its own series, "TRACE Specification, a Series of LF Projects, LLC", under [LF Projects policies](https://lfprojects.org/policies/). It has also been proposed to the Agentic AI Foundation at the Sandbox stage ([aaif/project-proposals #42](https://github.com/aaif/project-proposals/issues/42), opened 14 September 2026). See [Governance](https://trace.agentrust-io.com/GOVERNANCE/index.md) for how decisions are made and [Contributing](https://trace.agentrust-io.com/CONTRIBUTING/index.md) for how to propose a change.
 
-**Status:** spec v0.2 · agentrust-trace 0.10.0 · specification under the Community Specification License 1.0, code under Apache 2.0 · Sponsored by OPAQUE, which funds the engineering, infrastructure and confidential-computing work behind these projects.
+**Status:** spec v0.2 · agentrust-trace 0.11.0 · specification under the Community Specification License 1.0, code under Apache 2.0 · Sponsored by OPAQUE, which funds the engineering, infrastructure and confidential-computing work behind these projects.
 
 # Quickstart
 
@@ -293,7 +293,11 @@ A signature proves a statement came from the trusted key. It does not establish 
 
 ### Step 4: Check the EAT profile
 
-The current SDK requires `tag:agentrust-io.com,2026:trace-v0.2`. The superseded v0.1 identifier is rejected. This check is already included in `verify_record`; a custom verifier must also enforce its supported profile.
+[Section 3.3](https://trace.agentrust-io.com/spec/trace-v0.2/#33-verification) requires a nonempty `accepted_profiles` set containing only profiles whose schemas and verification semantics the verifier implements. Reject an unsupported member anywhere in that declaration, even if the record names a supported profile. Also reject a record whose `eat_profile` is outside the declared set.
+
+A successful verification result records both the verified `profile` and the complete `accepted_profiles` set configured at verification time. Retaining only the record's profile loses which other profiles the verifier claimed to support. These fields belong to the verifier's result; they do not alter the signed record.
+
+The current SDK accepts only `tag:agentrust-io.com,2026:trace-v0.2` and rejects the superseded v0.1 identifier. `verify_record` enforces these checks and returns `result.profile` and `result.accepted_profiles`. Obligations 1 and 4 of [#116](https://github.com/agentrust-io/trace-spec/issues/116), emitter version declarations and downgrade disclosure, remain deferred.
 
 ### Step 5: Appraise the claims
 
@@ -567,6 +571,20 @@ ______________________________________________________________________
 
 > **Note:** This is a pre-ratification draft. Fields, wire formats, and conformance requirements are subject to change before v1.0. Send feedback to: open an issue on this repository.
 
+## Authority and conformance claims
+
+This specification defines the meaning of TRACE claims and the requirements for conformance. Normative companion specifications apply within the scope this specification assigns them. The following rules govern the relationship between the specification and its supporting artifacts:
+
+- `schema/trace-claim.json` defines the machine-readable validation constraints. Passing schema validation alone MUST NOT be represented as establishing TRACE conformance: semantic requirements and verification checks also apply. Schema descriptions do not add or override normative requirements.
+- The reference model in `src/agentrust_trace/models.py` is an implementation of those requirements, not an independent source of requirements.
+- `docs/*.md`, including proposals under `docs/rfcs/`, explains the specification and MUST NOT override its normative requirements.
+
+Where the schema, reference model or explanatory documentation disagrees with the normative specification, the disagreement MUST be treated as a defect in the supporting artifact. Neither accepting the union nor requiring the intersection of conflicting implementations resolves the normative rule. A schema is too narrow or too broad when it rejects or admits records contrary to the specification's structural validation constraints. Requirements enforced by verification, including signature and freshness checks, remain separate. Where normative text is silent, a rule found only in an implementation, schema description or proposal MUST NOT be promoted to a normative requirement without the specification change process. Such a coverage gap requires a specification decision.
+
+A conformance claim MUST identify the specification version and exact revision being claimed, together with the schema artifact used for validation. For a published release, record the release tag or package version and a digest of the schema bytes; for an unreleased checkout, record the full commit identifier and schema digest. Identify the verifier or conformance-suite version and the level assessed when either is used. These are accompanying reporting details, not new Trust Record fields. A schema-only result MUST be described as schema validation, not as complete conformance.
+
+TRACE v0.2 is a draft: `main` can differ from a published package. A finding against one revision MUST NOT be presented as a finding against another without checking the applicable requirements and artifacts. Reporting a schema version does not make that schema authoritative over the normative specification.
+
 ## Changes from v0.1
 
 One normative change, and it is breaking.
@@ -603,18 +621,18 @@ The vocabulary lags the system. Auditors still say *the model* because that is t
 
 The wall is not technical capability: it is evidence. AI builders today produce policy documents, SOC reports, vendor self-attestation, and mutable application logs. None prove what actually happened during execution, so review cycles stretch from days into months.
 
-| Layer                          | What exists                                                                                   | What is missing                                                                 |
-| ------------------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Static documentation           | Model Cards, Data Cards, AIBOMs (SPDX 3.0 / CycloneDX 1.7)                                    | No runtime binding: diverges from deployed reality                              |
-| Operational tracking           | MLflow, W&B, vendor logs                                                                      | Self-reported, mutable, no tamper evidence                                      |
-| Hardware attestation           | NVIDIA NRAS, Intel Trust Authority, AMD SEV-SNP, AWS Nitro, Azure MAA, GCP Confidential Space | Proves the environment is genuine: no governance, policy, or data-class binding |
-| Content provenance             | C2PA Content Credentials                                                                      | Proves content origin: silent on inference execution                            |
-| Compliance frameworks          | NIST AI RMF, ISO 42001, EU AI Act Annex IV / Article 12                                       | Mandate documentation; no prescribed cryptographic format                       |
-| **Execution governance proof** | **Vendor-proprietary artifacts**                                                              | **No open, portable, vendor-neutral standard exists**                           |
+| Layer                          | What exists                                                                                   | What is missing                                                                  |
+| ------------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Static documentation           | Model Cards, Data Cards, AIBOMs (SPDX 3.0 / CycloneDX 1.7)                                    | No runtime binding: diverges from deployed reality                               |
+| Operational tracking           | MLflow, W&B, vendor logs                                                                      | Self-reported, mutable, no tamper evidence                                       |
+| Hardware attestation           | NVIDIA NRAS, Intel Trust Authority, AMD SEV-SNP, AWS Nitro, Azure MAA, GCP Confidential Space | Proves the environment is genuine: no governance, policy, or data-class binding  |
+| Content provenance             | C2PA Content Credentials                                                                      | Proves content origin: silent on inference execution                             |
+| Compliance frameworks          | NIST AI RMF, ISO 42001, EU AI Act Article 11 / Annex IV                                       | Documentation and governance frameworks; no TRACE cryptographic format specified |
+| **Execution governance proof** | **Vendor-proprietary artifacts**                                                              | **No open, portable, vendor-neutral standard exists**                            |
 
 The result: every regulated AI deployment re-litigates trust at every host boundary. Each cloud, each model provider, each agent framework ships its own evidence shape. Auditors cannot compare. Verifiers cannot federate. Workloads cannot move.
 
-The EU AI Act mandates tamper-evident logging for high-risk AI (Article 12); under the current provisional timeline those obligations apply from around December 2027. Frameworks already in force, DORA for financial entities, HIPAA for healthcare, carry equivalent audit-trail requirements today. Autonomous agents inside critical infrastructure are landing before the standard exists to govern them.
+The EU AI Act requires high-risk AI systems to support automatic event logging throughout their lifetime (Article 12). It does not prescribe tamper-evident logging; TRACE supplies cryptographic evidence as a separate technical property. Articles 11 and 12 sit in Chapter III Section 2, whose application Article 113, third paragraph, point (c), as replaced by Regulation (EU) 2026/1744, moved to 2 December 2027 for systems high-risk under Article 6(2) and Annex III and to 2 August 2028 for systems high-risk under Article 6(1) and Annex I, subject to the transitional provisions in Article 111. See the [consolidated Regulation (EU) 2024/1689](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02024R1689-20260727). A TRACE record or verification level does not establish regulatory compliance.
 
 ______________________________________________________________________
 
@@ -1006,6 +1024,10 @@ Any party, browser, CLI, in-cluster verifier, third-party auditor, verifies:
 1. SLSA provenance resolves to a trusted builder.
 1. The record-signing key is not revoked as of the entry the record was logged at, per section 3.2.3. A verifier holding no revocation bundle, or only an expired one, reports that rather than treating it as a pass.
 
+**Verifier profile compatibility.** A verifier MUST declare a nonempty `accepted_profiles` set of profile identifiers whose schemas and verification semantics it implements. A declaration containing an unimplemented profile MUST be refused, even when the incoming record names another implemented profile. A verifier MUST refuse a record whose `eat_profile` is outside its declared set. These requirements do not override the v0.1 cutover in "Changes from v0.1".
+
+For each successful verification, the verifier MUST report the verified `profile` and the complete `accepted_profiles` set as verifier-result fields, recording the set configured at verification time. `profile` MUST identify the record's signed `eat_profile`. These fields belong to the verifier's result; they are not new claims added to the signed input record.
+
 No callback to the issuer. No vendor in the trust path beyond silicon root and transparency log operators.
 
 #### 3.3.1 Build provenance verification depth
@@ -1042,11 +1064,13 @@ A verifier configured with the issuer key that fails any of these three checks M
 
 #### 3.3.3 Action receipts for embodied workflows (informative)
 
+Here, a TRACE session means a receipt stream or producer-defined execution scope, not an MCP protocol session.
+
 Embodied-agent profiles need to keep three evidence layers separate:
 
 | Layer                    | TRACE role                                                                                                                  | Boundary                                                                  |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Session evidence         | The Trust Record, policy hash, runtime measurement, and `tool_transcript.hash` bind the governed session.                   | Does not expose every call unless the verifier has the transcript bytes.  |
+| Execution-scope evidence | The Trust Record, policy hash, runtime measurement, and `tool_transcript.hash` bind the producer-defined execution scope.   | Does not expose every call unless the verifier has the transcript bytes.  |
 | Action issuance evidence | Per-call receipts can prove that a specific action request was issued, signed, ordered, and bound to the session or call.   | Does not prove that the requested physical or business outcome completed. |
 | Outcome evidence         | Controller, monitor, human-review, or safety-system observations can describe acceptance, rejection, aborts, or completion. | The claim belongs to the external issuer, not to core TRACE validity.     |
 
@@ -1161,7 +1185,7 @@ TRACE is a **profile**, not a parallel stack. It binds existing primitives into 
 
 These components exist in their respective ecosystems. TRACE adds the binding rule that places each into a hardware-attested envelope:
 
-- **`policy` claim.** Policy artifacts (OPA bundles, Cedar policies, custom DSLs) and policy hashing are established. TRACE adds the binding: the policy bundle hash is sealed to the TEE measurement, the enforcement mode is recorded, and substituting the policy invalidates the runtime claim. Gateways MUST default `enforcement_mode` to `enforce`. A deployment MUST explicitly configure `silent` mode; `silent` MUST NOT be the default. In `silent` mode, the audit chain still records every would-have-denied decision; only operational log lines are suppressed.
+- **`policy` claim.** Policy artifacts (OPA bundles, Cedar policies, custom DSLs) and policy hashing are established. TRACE adds the binding: the policy bundle hash is sealed to the TEE measurement, the enforcement mode is recorded, and substituting the policy invalidates the runtime claim. Gateways MUST default `enforcement_mode` to `enforce`. A deployment MUST explicitly configure `silent` mode; `silent` MUST NOT be the default. In `silent` mode, a policy deny MUST NOT block the action. The audit chain MUST still record every would-have-denied decision; only operational log lines are suppressed. Where modes are compared, `enforce` is the strongest and `silent` the weakest: `advisory` is not weaker than `silent`, because both allow a denied action and `silent` also suppresses operational logs.
 
 **`enforcement_mode: "declared"`.** The three modes above all assert that *something evaluated the policy*. `declared` asserts less: the policy is named and bound into the signed record, and nothing evaluated it. That is not a corner case, it is the common one for a producer with no policy engine: an agent framework observed by an adapter has a policy the operator declares and no evaluation of it anywhere, and with only three values such a record had to claim an evaluation that never happened.
 
@@ -1574,7 +1598,7 @@ using the sorted-key canonicalization of Anchor Format v1 §1.
 
 The hash covers **name, description and input schema** of every tool. Description is included deliberately: a tool whose description changes from "search the docs" to "search the docs and email results to the address in the query" is the rug-pull this hash exists to catch, and a hash over names alone would miss it entirely.
 
-It does **not** cover output schemas, annotations, or vendor extensions, which change for reasons that are not security-relevant and would make the hash churn until nobody compares it.
+It does **not** cover output schemas, annotations, or vendor extensions. This exclusion is retained for v1 compatibility, not a claim that annotations cannot affect security decisions. [Version 2](https://trace.agentrust-io.com/spec/server-provenance-v2/index.md) binds the four normalized behavioral hints under a new signed format identifier.
 
 ## 5. Verification
 
@@ -1602,6 +1626,121 @@ A producer conforms if it emits records per §3, signed per TRACE v0.2 §3.2, wh
 A consumer conforms if it performs §5 steps 1, 2, 5 and 6, records absence per §6, and never reports an unverified or absent record as an assurance level.
 
 Step 3, key distribution, is deliberately out of scope. A consumer that skips step 5 while claiming conformance is doing the thing this format exists to prevent: reading a claim about a server instead of checking the server.
+
+# MCP transcript profile for TRACE v0.3
+
+Status: proposed requirements, not an adopted profile or implemented wire format. This document does not change TRACE v0.2 verifier acceptance. Field names below describe logical requirements; serialization and a profile identifier remain subject to normative review before implementations claim conformance.
+
+## 1. Scope
+
+This proposal covers evidence for MCP tool-call attempts, including the complete tool declaration set the producer used when selecting and dispatching a call. It targets [MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/changelog), which removed protocol sessions and documents OpenTelemetry context propagation. Earlier MCP revisions can supply additional protocol-session metadata; that metadata does not replace the evidence identity defined here.
+
+The requirements below use MUST, MUST NOT, SHOULD and MAY as proposed normative requirements. Publication of this draft does not adopt those requirements.
+
+## 2. Evidence identity and correlation
+
+A producer MUST assign an execution-scope identifier and a distinct identifier for each outbound tool-call attempt. The pair MUST be unique within that producer's signing identity. A verifier MUST interpret identifiers together with that identity; equal identifiers from different producers do not establish a shared execution. Reuse for conflicting attempts MUST be rejected.
+
+The signed evidence MUST bind the scope, attempt, MCP protocol revision, target server identity as observed, tool name, exact request commitment and declaration snapshot commitment. Any authentication or appraisal of the target server MUST be reported separately from the producer's assertion of its identity.
+
+OpenTelemetry `traceparent` and `tracestate` MAY be recorded as correlation metadata. They MUST NOT substitute for authenticated producer identity, attempt identity, authorization or proof of causality. Server-minted handles remain application state in tool arguments; they MUST NOT be treated as MCP sessions. Sensitive handles and baggage SHOULD NOT be copied into additional public metadata merely to correlate calls.
+
+## 3. Declaration snapshot
+
+For every attempt, the producer MUST commit to the complete tool declaration set it used at call time, including tools not selected. The snapshot MUST retain all members of each declaration, including input and output schemas, annotations, extensions and metadata. Missing members MUST remain distinguishable from explicit values. A selected-field catalog projection does not meet this rule.
+
+The retained snapshot MUST identify the server, protocol revision, collection context and ordered `tools/list` result pages used to assemble the set. Result pages MUST be retained in full, including pagination and cache metadata. The snapshot MUST record whether collection reached a terminal page and whether the producer observed a catalog-change notification during collection or before dispatch. An incomplete collection MUST NOT be reported as a complete snapshot. Repeated pagination cursors or a collection stopped by resource limits MUST be reported as incomplete. Cached snapshots MUST identify their original capture and the freshness policy under which they were reused. A new fetch after execution cannot replace the snapshot used for selection.
+
+The profile's eventual canonicalization contract MUST specify duplicate-key rejection, number handling, array ordering and digest algorithm/domain separation for the entire snapshot object. It MUST preserve declaration members rather than silently projecting away fields it does not recognize. If a value cannot be represented by that contract, the producer MUST report unsupported evidence rather than drop or coerce it. TRACE's existing integer-only JCS boundary needs explicit treatment for MCP declarations containing non-integer schema values; this draft does not silently widen that boundary or select a replacement.
+
+A complete traversal records what the producer observed. It does not prove an atomic server catalog revision across pages, a truthful server, or that the server executed the captured declaration. A profile verifier MUST report those limits. An independently authenticated revision or server observation MAY add evidence, with its issuer and verification result identified separately.
+
+## 4. Signature and transcript binding
+
+The snapshot digest, its canonicalization/version identifier and the attempt identity MUST be inside the authenticated evidence boundary. One permitted design is to place them in each transcript entry and cover those entries with the signed Trust Record's `tool_transcript.hash`; the final profile MUST specify the transcript serialization and hash preimage before this is interoperable. A mutable URI alone MUST NOT satisfy snapshot binding.
+
+Verification MUST check the record signature and trust policy, recompute the transcript commitment, and match each attempt to its retained snapshot bytes. Changing an uncalled tool's declaration MUST invalidate the snapshot comparison. Unavailable snapshot or transcript bytes MUST be reported as unavailable evidence, not as a successful declaration or call verification. Signature verification can still be reported separately with its narrower meaning.
+
+The [server provenance v1 projection](https://trace.agentrust-io.com/spec/server-provenance-v1/index.md) and the proposed [v2 projection in PR #409](https://github.com/agentrust-io/trace-spec/pull/409) are different artifacts. V2 adds four behavioral hints but still omits output schemas and extensions. Neither projection proves this full-snapshot requirement. Policy or authorization evidence remains separately identifiable when bound by an application profile; a declaration digest itself grants no authority.
+
+## 5. Retries and outcomes
+
+Each re-issued request MUST receive a new attempt identifier. The producer MUST retain the prior attempt and explicitly link any retry to it within the same authenticated evidence boundary. MCP request IDs MUST be recorded with their type and request context; they MUST NOT serve as globally unique attempt IDs.
+
+The transcript MUST distinguish a recorded response, an observed transport failure, and an unknown execution outcome. A broken response stream or timeout MUST NOT be described as proof that the tool did not execute. A successful retry MUST NOT overwrite the earlier unknown outcome or imply execution occurred only once. Multi-round-trip continuations likewise need distinct request attempts and an explicit relationship; an interim result is not a completed tool result.
+
+Recorded responses MUST be bound to their attempt and exact contents. A response reported by a producer is not automatically authenticated by the server. Any separate server response proof MUST state its verification boundary. Call counts MUST count the profile's recorded tool-call attempts, including failed or unknown attempts, and MUST NOT be presented as counts of business operations completed.
+
+## 6. Acceptance cases for the eventual implementation
+
+These are required test designs, not claims of tests already implemented.
+
+| Positive control                                         | Negative or boundary case                                 | Required distinction                      |
+| -------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------- |
+| Retained complete snapshot matches the signed commitment | Change an uncalled tool, output schema or extension       | Snapshot mismatch                         |
+| All result pages retained through termination            | Missing page, repeated cursor or collection limit reached | Incomplete evidence                       |
+| Original cached capture and freshness policy retained    | Replace it with a post-call fetch                         | Wrong snapshot                            |
+| Supported canonical values round-trip                    | Duplicate keys or unsupported numeric value               | Reject or report unsupported; no coercion |
+| Trusted record and recomputed transcript/snapshot        | Move the digest outside the signed boundary               | Binding failure                           |
+| Available snapshot bytes match                           | URI resolves to changed bytes or bytes are missing        | Mismatch or unavailable, separately       |
+| Two attempts linked by an authenticated retry relation   | Reuse an attempt ID or replace the first outcome          | Identity/history conflict                 |
+| Timeout followed by successful retry                     | Treat first attempt as proven non-execution               | Unknown remains unknown                   |
+| Producer records a server response                       | Assert server authentication without its proof            | Producer observation only                 |
+
+## 7. Adoption and remaining work
+
+Before adoption, specify the wire shape and profile identifier, transcript and snapshot canonicalization, pagination consistency limits, resource bounds and validation errors. Add schema, producer/verifier implementation, retained vectors and causal negative controls for section 6. Review confidentiality and retention of declaration metadata and tool arguments before publishing example artifacts.
+
+Existing v0.2 records retain their original semantics and MUST NOT be relabeled as conforming to this profile. Implementations will need explicit opt-in and verifier support; no existing SDK is claimed to implement this draft. Sponsorship, Project Lead approval and the applicable comment period remain governed by [CONTRIBUTING](https://trace.agentrust-io.com/CONTRIBUTING/index.md) and [GOVERNANCE](https://trace.agentrust-io.com/GOVERNANCE/index.md).
+
+Signatures authenticate commitments from an identified producer. They do not prove complete execution history, truthful declarations, actual tool behavior, authorization, exactly-once execution or business completion.
+
+# MCP Server Provenance Record v2
+
+| Field   | Value                                   |
+| ------- | --------------------------------------- |
+| Version | 2                                       |
+| Status  | Draft proposal, companion to TRACE v0.2 |
+| License | CC BY 4.0                               |
+
+## 1. Scope and inherited requirements
+
+This version binds four behavioral declarations in an MCP tool catalog. All requirements of [Server Provenance v1](https://trace.agentrust-io.com/spec/server-provenance-v1/index.md) apply except the format identifier and catalog projection specified below. In particular, identity, assurance kinds, trusted-key selection, signatures, anchoring and absence retain their v1 meanings. This is a separate provenance format version, not a new TRACE Trust Record version.
+
+The record's `format` MUST be `agentrust-io/mcp-server-provenance/2`. It is covered by the signature. A verifier MUST reject unknown versions and MUST select the catalog projection from the signed format. It MUST NOT retry a mismatching v2 catalog using the v1 projection.
+
+## 2. Catalog projection
+
+For each tool, v2 adds an `annotations` object to the v1 projection of `name`, `description` and `input_schema`. The object MUST contain exactly these four boolean members, using the following defaults for absent members:
+
+| Member            | Default |
+| ----------------- | ------- |
+| `readOnlyHint`    | `false` |
+| `destructiveHint` | `true`  |
+| `idempotentHint`  | `false` |
+| `openWorldHint`   | `true`  |
+
+These defaults follow MCP's [ToolAnnotations definition](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-06-18/schema.ts). An absent `annotations` member is equivalent to an empty object. A present `annotations` value MUST be an object; explicit null is invalid. Each present behavioral member MUST be a JSON boolean. Null, numbers and strings MUST NOT be coerced to booleans or treated as absent.
+
+```
+{"name":"write","description":"Write a file","input_schema":{"type":"object"},"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":true}}
+```
+
+The list is sorted and hashed with the same sorted-key canonicalization and SHA-256 rules as v1 section 4. `inputSchema` is accepted as the wire spelling of `input_schema`; if both appear, their canonical values MUST agree. Missing `name`, `description` or input schema retain v1's null projection. This projection does not replace MCP tool validation.
+
+All four declarations are retained even when `readOnlyHint` is true. MCP gives destructive and idempotent hints behavioral meaning only for non-read-only tools; v2 nevertheless binds the declarations themselves, including otherwise inactive ones. Omitted and explicitly defaulted values have identical hashes. Any boolean change has a different projection. Output schemas, annotation titles, other annotations, `_meta` and vendor extensions remain excluded.
+
+## 3. Verification and migration
+
+A verifier supporting both versions MUST preserve v1's original projection. Existing v1 signatures and catalog hashes do not acquire annotation coverage. Consumers requiring behavioral annotation binding MUST require v2 explicitly; accepting any supported version is insufficient. Signature verification and live catalog comparison remain separate required checks.
+
+The reference library retains `FORMAT`, `build_record()` and `tool_catalog_hash()` defaults as v1. New producers select `format=FORMAT_V2` in both APIs. Consumers can enforce v2 with `required_format=FORMAT_V2` in both `verify_record()` and `check_tool_catalog()`. Old v1-only verifiers reject v2; upgrade consumers before switching producers. Do not relabel an existing record: recompute its catalog hash and sign a new record. An empty catalog has the same digest in both versions; the signed format still distinguishes their contracts.
+
+## 4. Limits and conformance
+
+A bound hint is an authenticated declaration, not evidence of actual behavior. Consumers MUST NOT infer behavioral guarantees or permission to execute from a successful catalog comparison. Trusted-key selection and local authorization remain necessary. MCP cautions against trusting hints from untrusted servers.
+
+In addition to v1's inherited checks, v2 conformance requires accepting omitted and explicitly defaulted hints equivalently, detecting each behavioral hint change, rejecting malformed hint values, preserving v1 verification, rejecting unknown formats, and rejecting v1 when v2 is required. The reference tests in `tests/test_provenance_v2.py` exercise these boundaries, including all 16 boolean combinations and changes to each member.
 
 # Binding Synthetic-Content Marking to an Attested Execution, v1
 
@@ -1756,12 +1895,12 @@ Binds the execution environment. Platform-specific fields vary by TEE type.
 
 Binds the governance policy in force during this session.
 
-| Field              | Type   | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------ | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bundle_hash`      | string | **yes**  | `sha256:` digest of the Cedar policy bundle bytes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `enforcement_mode` | string | **yes**  | One of: `enforce` (evaluated, blocked on deny), `advisory` (evaluated, logged, allowed), `silent` (evaluated and enforced with operational logs suppressed; the audit chain still records every would-have-denied decision), `declared` (the policy is named and bound into the signed record and nothing evaluated it: the honest value for a producer with no policy engine, never a default, and not evidence that any rule was checked). Defaults to `enforce`. Section 4.3 of the spec defines `enforce`, `silent` and `declared`; `advisory` is in the schema's closed set and its one-line meaning is the schema's own description, not spec text |
-| `version`          | string | no       | Policy bundle version string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `policy_uri`       | string | no       | URI to the policy bundle for inspection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Field              | Type   | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bundle_hash`      | string | **yes**  | `sha256:` digest of the Cedar policy bundle bytes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `enforcement_mode` | string | **yes**  | One of: `enforce` (evaluated, blocked on deny), `advisory` (evaluated, logged, allowed), `silent` (evaluated and allowed, including on deny, with operational logs suppressed; the audit chain still records every would-have-denied decision), `declared` (the policy is named and bound into the signed record and nothing evaluated it: the honest value for a producer with no policy engine, never a default, and not evidence that any rule was checked). Defaults to `enforce`. Section 4.3 of the spec defines `enforce`, `silent` and `declared`; `advisory` is in the schema's closed set and its one-line meaning is the schema's own description, not spec text |
+| `version`          | string | no       | Policy bundle version string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `policy_uri`       | string | no       | URI to the policy bundle for inspection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ## `data_class`
 
@@ -2672,6 +2811,8 @@ A record under the superseded v0.1 EAT profile is not accepted by the current v0
 
 The adapter uses RFC 8785 for transcript canonicalization. It currently accepts a transparency string but does not submit to a registry. `appraisal.status` defaults to `none`, because the adapter does not evaluate the session and `appraisal.status` is the verifier's field (spec section 3.3.1); pass `appraisal_status` only when an appraisal actually happened. A producer must accurately set those fields before signing; the tutorial shows how to avoid claiming an anchor for synthetic input.
 
+`enforcement_mode` is required and has no default. The adapter observes a session; it does not evaluate the policy, so it cannot know which mode applied. A default of `"enforce"` would claim an evaluation nobody saw, and spec section 4.3 says `"declared"` must not be a default. Pass the mode the deployment actually ran under, or `"declared"` when no policy engine evaluated the policy. This changes the evidence constructor, not the runtime's enforcement default or behavior.
+
 ## Assurance
 
 Software signing authenticates the producer's statement when the recipient trusts its key. Hardware evidence requires a separately verified runtime and key binding. Level 2 additionally requires transparency anchoring. Placing an AGT application near a cMCP gateway does not automatically create matching or superseding records; use the [cMCP integration guide](https://trace.agentrust-io.com/docs/integration/cmcp/index.md) for that runtime's boundary.
@@ -2728,8 +2869,8 @@ OpenShell and ACS enforce different layers. Bind both into one canonical policy 
 `policy.bundle_hash` is the digest of the canonical bundle bytes. The record's single `policy.enforcement_mode` is the weakest mode among the layers:
 
 - `enforce` only when both layers enforce;
-- `advisory` when either layer evaluates without blocking;
-- `silent` when a layer enforces while suppressing operational logs.
+- `advisory` when either layer evaluates without blocking, or enforces while suppressing operational logs, since no mode states that combination and `advisory` understates it rather than overstating it;
+- `silent` when either layer runs in `silent` mode.
 
 ## Transcript binding
 
@@ -2804,6 +2945,7 @@ adapter = TraceSandboxAdapter(
     model_provider="example-provider",
     model_id="example-model-1",
     data_class="confidential",
+    enforcement_mode="enforce",  # the mode the sandbox actually enforced
 )
 
 # Per session, from what the runtime already knows at close.
@@ -2819,6 +2961,8 @@ TrustRecord.model_validate(record)
 ```
 
 That record is Level 0: signed, offline-verifiable, and honest that no hardware backed it. `runtime.platform` reads `software-only`.
+
+`enforcement_mode` is required and has no default. The adapter records what the runtime reports and evaluates nothing itself, so a default of `"enforce"` would claim an evaluation nobody saw, and spec section 4.3 says `"declared"` must not be a default. Pass the mode the sandbox actually enforced, or `"declared"` when no policy engine evaluated the policy. This changes the evidence constructor, not the runtime's enforcement default or behavior.
 
 ## Adding a root of trust
 
@@ -2958,11 +3102,9 @@ Related: [google/go-sev-guest#195](https://github.com/google/go-sev-guest/issues
 
 ## What Level 0 does not provide
 
-Level 0 (software-only signing) is suitable for development, internal audit trails, and staging environments. It does not satisfy:
+Level 0 provides software signatures without hardware-rooted assurance. A privileged operator may extract the signing key; a valid signature does not establish that execution was protected by a TEE.
 
-- EU AI Act Art. 12 (tamper-evident logging): requires Level 1+
-- DORA Art. 9 (ICT risk management): requires Level 1+ with transparency log anchoring
-- Any claim of hardware-rooted trust: the signing key is held in software and can be extracted by a privileged operator
+TRACE verification levels describe technical evidence, not legal compliance. Article 12 of the EU AI Act requires a logging capability; it does not prescribe a TRACE level or tamper-evident format. See the [regulatory context in the specification](https://trace.agentrust-io.com/spec/trace-v0.2/#1-problem). Neither a TRACE level nor transparency-log anchoring alone establishes compliance with the EU AI Act or DORA. Deployment-specific obligations require a separate assessment.
 
 ## What the SDK does not do
 
@@ -2987,7 +3129,7 @@ Claim verification (signature check + schema validation) is < 5 ms in all cases.
 
 # Roadmap
 
-Status as of September 2026. Spec **v0.2** is current ([`spec/trace-v0.2.md`](https://trace.agentrust-io.com/spec/trace-v0.2/index.md)); the `agentrust-trace` reference SDK is at **0.10.0** and the conformance suite (`agentrust-io/trace-tests`) at **0.5.1**.
+Status as of September 2026. Spec **v0.2** is current ([`spec/trace-v0.2.md`](https://trace.agentrust-io.com/spec/trace-v0.2/index.md)); the `agentrust-trace` reference SDK is at **0.11.0** and the conformance suite (`agentrust-io/trace-tests`) at **0.5.1**.
 
 ## Shipped: v0.2 (July to August 2026)
 
@@ -3006,7 +3148,7 @@ Status as of September 2026. Spec **v0.2** is current ([`spec/trace-v0.2.md`](ht
 
 ## Next: v0.3
 
-- **MCP profile (normative)**: claim shape and binding rules for MCP tool-call transcripts. The `tool_transcript` claim exists and is bound; what is missing is the normative rule set, for upstream contribution to MCP spec governance.
+- **MCP profile (normative)**: the [requirements proposal](https://trace.agentrust-io.com/spec/mcp-profile-v0.3-draft/index.md) separates TRACE attempt identity, correlation metadata and signed declaration snapshots. Wire format, implementation and adoption remain pending before upstream contribution to MCP spec governance.
 - **A2A profile (normative)**: binding rules over the `delegation` block now that A2A is stable at v1.x, including the mutual case. cA2A is the reference implementation.
 - **Attested memory and persistent state**: a claim for agent memory integrity at runtime, digesting the whole store rather than a manifest of it. Nothing in the ecosystem measures agent memory today; every runtime treats the agent as stateless between actions.
 - **Encrypted claims envelope**: normative profile for JWE / COSE-Encrypt where `data_class` requires confidential transport to verifiers (open question §7 Q5).
@@ -3209,12 +3351,27 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
+- Propose explicit verifier profile declarations and verifier-result field requirements for obligations 2 and 3 of #116, carried by Imran Siddique following the discussion with @lywinged. Obligations 1 and 4 remain deferred; the v0.1 cutover is unchanged.
+- **Breaking, proposed: `silent` mode allows a policy-denied action (#143, following #28).** Section 4.3 now says a deny MUST NOT block in `silent` mode and the audit chain MUST record every would-have-denied decision. v0.9.0 and v0.10.0 described `silent` as evaluated and enforced under the same `eat_profile`, so a producer that followed that text and blocks on deny no longer conforms, and a `silent` record does not say which meaning it was written under. Classified breaking under GOVERNANCE.md, so adoption needs the 30-day comment period and Project Lead sign-off. Section 4.3 also orders the modes: `advisory` is not weaker than `silent`. Enforce remains the default; schema constraints and runtime behavior are unchanged. Classification raised by @lywinged.
+- **Specification precedence and reproducible conformance claims (#247).** The v0.2 draft now states that normative text governs meaning and conformance; disagreements in the schema, reference model or explanatory documentation are defects in those supporting artifacts. Schema validation alone is not complete conformance, and a normative gap needs a specification decision. Conformance reports identify the specification revision and schema artifact, including its digest, plus the verifier or suite version and assessed level where used. This adds reporting requirements without changing Trust Record fields or verifier acceptance behavior. Based on the maintainer ruling and producer feedback from @chernistry and @lywinged in #247.
+
+## [0.11.0] - 2026-09-25
+
+- **Breaking:** `TraceSandboxAdapter` and `TraceAGTAdapter` require `enforcement_mode`; it no longer defaults to `"enforce"`. An evidence constructor that fills in `"enforce"` signs a claim that a policy was evaluated when nothing observed an evaluation (#416), and the first fix, a `"declared"` default (#417), is ruled out by spec section 4.3: `declared` MUST NOT be a default. Callers that omitted the argument now get a `TypeError` and must pass the mode their runtime actually ran under, or `"declared"` when no policy engine evaluated the policy. Runtime enforcement defaults are unchanged. Diagnosis and first fix by @solloek369-arch.
+- **Signatures accept one spelling.** `sign._b64url_decode` accepts only canonical unpadded base64url, so a Trust Record, JWK `x`, provenance, intent-bridge or revocation-bundle signature carrying padding or non-canonical trailing bits is refused instead of decoding to the same bytes. `content_marking` refuses served record bytes with duplicate members. Deeply nested `cnf.jwk`, tool calls and provenance records raise each module's documented error type instead of `RecursionError`, and `tool_catalog_hash` raises `ProvenanceError` for a catalog with no anchor form. ClusterFuzzLite now covers the record, bundle, provenance, bridge, content-marking and canonicalization paths (#418).
+- Correct regulatory context in the published v0.1/v0.2 introductions and LIMITATIONS.md (#328, following #314). Separate Article 12 logging capability from TRACE tamper-evidence, identify Article 11 / Annex IV as documentation context, correct the applicability dates and remove unsupported TRACE-level compliance claims. Editorial only; reported by @ioanavalea with review context from @lywinged.
+- Propose v0.3 MCP profile requirements for producer-defined attempts, signed full declaration snapshots and explicit retry outcomes (#324). Clarify existing session wording without changing v0.2 validation. Proposed by @madeinplutofabio with declaration-binding refinements from @Mayur021; maintainer-carried proposal, not adopted or implemented.
+- Propose MCP Server Provenance v2 with normalized behavioral-hint binding (#406). Preserve v1 hashes and producer defaults; add explicit v2 production and consumer format requirements. Reported by @altrudev.
 - Compare challenge nonces as UTF-8 bytes so non-ASCII mismatches raise the documented ValueError instead of TypeError (#381). Matching strings remain accepted without Unicode normalization. Invalid non-string expected_nonce settings raise a clear ValueError. Reported by @chernistry; follow-up review by @lywinged.
 - Report revocation bundles without an RFC 8785 form as `unverified_for_revocation` with cause `bundle_malformed`, while continuing record verification (#382). The direct bundle-digest API still refuses such input. Reported by @chernistry.
 - Regenerate the v0.3 draft after canonical reproducibility additions and make the schema inventory test use portable repository paths on Windows.
+- Keep untrusted input on each verifier's documented error type. Nesting a few hundred levels deep in `cnf.jwk`, a tool call, a provenance record or served content-marking bytes raised `RecursionError`; a 4,400 digit URL port raised Python's integer-string `ValueError`; a float or unsafe integer in an offered tool's `input_schema` raised `UnanchorableValue` from `check_tool_catalog`. All were refusals already, none was an acceptance. Found by the new ClusterFuzzLite targets in `.clusterfuzzlite/`; regression tests in `tests/test_untrusted_input_stays_on_the_documented_error.py`.
+- Decode signatures and JWK `x` as canonical unpadded base64url only. The decoder took the standard alphabet, `=` padding and stray characters, and ignored the unused bits of the last character, so one signature had several spellings that all verified, and a revocation bundle's `bundle_digest` (which covers `sig.value`) gave one bundle several identities. The record-level rule for `signature` is the normative proposal in #401 and is not changed here. `verify_assertion` and `build_assertion` also refuse served record bytes that name one member twice, since `json.loads` keeps the last and another parser keeps the first. Tests in `tests/test_signature_spelling_is_canonical.py`.
 
 ### Added
 
+- **`intent_bridge.verify_bridge()` binds a successor observation (#340, for #338).** A bridge may carry `transcript.after` as a successor-observation envelope whose RFC 8785 / SHA-256 digest equals the signed `authorization.successor_observation_digest`. The new `successor_observation` module evaluates the envelope, and `schema/pic-trace-bridge-v1.json` and `docs/integration/pic-trace-bridge-v1.md` describe it.
+- **`provenance.verify_record()` takes an explicit `now` (#411).** A non-negative integer Unix timestamp pins the freshness decision so it can be replayed. Booleans and other types are refused as configuration errors. Omitting it keeps the host clock.
 - **`condition-appraisal` is a registered `references` relation, and the registry says what it is.** #191, #209, #220 and later #321 each asked for a way to bind a governance fact held outside the record, and #226 read them as one question about the `rel` registry of section 3.1.2. This settles the part ruled on there: the registry is informative and open, the verifier rules of section 3.1.2 stay normative and section 3.1.2 now says so below them, and `docs/references-registry.md` holds each registered value's referenced object, what a relying party may establish from a resolved one, and the steps by which a name is added. The fourth value, `condition-appraisal`, is an independent check's finding on whether a stated condition is established by a stated subject: a test run, a schema validation, a contract check. Its referenced object binds the condition and the subject by digest, names its issuer and key, carries the outcome in the issuer's own closed vocabulary, and signs the canonical bytes of the rest; the reference's `digest` is over the object as retained. What a relying party may establish is bounded to the object: that the cited bytes are the cited bytes and, where it holds the issuer's key, that the issuer signed them; neither reaches the record, a `pass` is not attested evidence that the condition held, and a `fail` is not a finding against the record. `examples/condition-appraisal/` carries five signed records from a seeded generator against an appraisal store: confirmed, altered after issue, a fail that verifies exactly as the pass does, unresolvable, and an issuer whose key the relying party does not hold; `tests/test_condition_appraisal_fixtures.py` recomputes every verdict from the committed bytes and re-runs the generator against them. Re-running a cited check is a separate proposal and no part of this change. Proposed by @nutstrut on #226; ruled on by @imran-siddique. Informative: no requirement, schema shape or wire format changes; the schema's `rel` description gains the name.
 - **The schema, the reference model and the schema reference carry the reproducibility claim (section 3.1.4).** `schema/trace-claim.json` and its packaged copy gain the optional top-level `reproducibility` object: `function`, `code_identity`, an optional `code_resolver`, `input_closure` as `{id, digest, resolver}` entries with every member required, and `transcript_digest`. `appraisal` gains `method`, the closed set `re-execution`, and `re_execution`: `outcome` of `reproduced`, `diverged` or `not-attempted`, `observed_digest`, `reason`, and an optional `verifier_code_identity`. The three presence rules the section states are schema conditionals and model validators alike: `re_execution` is present exactly when `method` is `re-execution`, `observed_digest` is required on `diverged`, `reason` is required on `not-attempted`. `models.py` adds `Reproducibility`, `ClosureEntry` and `ReExecution`; `docs/schema.md` documents every member in its section. `examples/reproducibility-claim/` holds 21 signed vectors from a seeded key: five accepted records, a claim with no result and one result per outcome, and sixteen rejected ones, two per rule, with the transcript and closure digests recomputable from the JSON they are taken over. Tracks #364; closes #366.
 - **Vendor annex: Bernstein (software-only).** `docs/platforms/bernstein.md` maps a deterministic-scheduler producer with no hardware root onto the Trust Record: the journal each claim is derived from, the delegation link and aggregate composition under the section 3.1.3 preimage, where the two recomputable commitments of section 3.1.4 sit on such a record today, the mapping of the reproducibility claim onto the producer's re-derivation check, what a verifier can recompute without the producer, and the Level 0 ceiling a committed software-only corpus has by construction. Seven emitter-minted vectors, the supplementary-plane pair among them, are pinned by commit. Informative, per GOVERNANCE; the annex track is #231.
@@ -3227,6 +3384,18 @@ ______________________________________________________________________
 
 ### Fixed
 
+- **Schema regex semantics now match between `validate` and the Pydantic models (#412).** Patterns are shared from `_patterns.py`, so `models`, `content_marking` and the sandbox adapter accept and refuse the same strings the JSON Schema does. `tests/test_regex_surface_parity.py` holds them together.
+- **Schema `pattern` checks use ECMA-262 boundaries (#388).** Python `re` lets `$` match before a trailing newline and ECMA-262 does not, so a `subject` or URI ending in , , U+2028 or U+2029 validated before this change and is now refused.
+- **Malformed IPv4 literals inside URIs are refused (#387).** The `uri` format check now rejects an IPv4 address with a leading-zero octet embedded in a bracketed IPv6 literal, such as `https://[::1.2.3.04]/`.
+- **A present but malformed `signature` is reported as malformed, not missing (#390).** `sign.verify_record()` treated an empty or falsy value as absent.
+- **The AGT and sandbox adapters validate `iat` before it reaches the record (#343).** A boolean, negative or non-integer `iat` was written into the claims and only caught at signing or verification.
+- **`content_marking` refuses a non-string or empty `eat_profile` (#410), a boolean assertion `version` (#282) and a malformed `record.url` (#284).**
+- **`provenance` refuses non-string identity locators (#287) and a tool whose two schema aliases disagree (#300, closes #297).** Aliases are compared by canonical bytes.
+- **Revocation bundle freshness inputs are validated (#288).** Boolean and non-integer policy values raise a configuration error instead of being read as numbers.
+- **`TraceSandboxAdapter` validates its required textual fields (#290).**
+- **`intent_bridge` keeps a canonicalization failure's error class (#318)** instead of reporting it as an authorization mismatch.
+- **The README named an API the package never had (#309).** It told readers to call `TrustRecord.sign()`, `record.anchor()` and `record.verify()`. It now shows `sign_record` and `verify_record`, and `tests/test_readme_api_claims.py` fails if it drifts. The README is the PyPI long description, so this release is the first to show the correct calls on the project page.
+- **`sign.verify_record()` now validates `max_age_seconds` and `max_future_skew_seconds` the same way `provenance.verify_record()` does.** `provenance.verify_record()` rejects a malformed freshness bound via `_check_seconds()`, added per the review on #164. `sign.verify_record()`, the original Trust Record verifier, never received the same hardening: it checked only `max_future_skew_seconds < 0`, and `max_age_seconds` was compared against unvalidated. Passing `max_age_seconds=-1` (a value a caller might use meaning "no bound," since `None` is the documented way to disable the check) rejected every record, including one issued the same second, as `record is stale`, naming the record rather than the misconfigured argument. `_check_seconds()` is now defined once in `sign.py` and shared: `sign.verify_record()` calls it directly, and `provenance.verify_record()` imports it, passing its own `ProvenanceError` via a new `exc` parameter so each keeps its existing public error type.
 - **The v0.3 draft schema accepted the private half of a confirmation key.** `schema/trace-claim-v0.3-draft.json` states that outside the profile identifier and `runtime.evidence` it is byte-identical to `schema/trace-claim.json`, but it was forked from an older revision and never received the `cnf.jwk` private-key refusal (#296) or the RSA branch (#311), so a v0.3 record carrying `d` validated against it. The shipped verifier refuses any profile other than v0.2 before schema checks, so nothing accepted such a record in practice. The draft is now produced by `scripts/gen_v03_draft_schema.py` from the canonical schema plus its own declared members, and `tests/test_v03_draft_schema.py` fails when the committed file drifts. Reported by @saintmalik in #368.
 - **Server provenance records now enforce the existing attestation shape in both `build_record()` and `verify_record()`.** After #325, non-object values were already refused. The remaining gaps included an empty object on a non-TEE record, an unknown platform, and `platform: "software-only"` on a `tee-attested` record. Non-TEE records now require `attestation is None`; `tee-attested` records validate against `RuntimeInfo` and additionally reject `software-only`. This implements `spec/server-provenance-v1.md` section 3's reference to the TRACE v0.2 runtime shape. **Previously accepted signed records with extra attestation members or incorrectly typed optional fields are also refused.** `schema/trace-claim.json` disallows additional runtime properties and requires strings for `rim_uri`, `nonce`, and `firmware_version` when present. The existing `RuntimeInfo` model enforces the extra-member restriction and the types of non-null optional values; it is reused here without changing its behavior. Regression cases exercise the builder and verification of directly signed records, including extra members and each optional field's type, with valid controls. All nine hardware platform names accepted by the model remain accepted.
 - **`TraceAGTAdapter.build_trust_record()` stamped `appraisal.status` as `affirming` on every record it produced, with no way to change it.** `appraisal.status` is a verifier-owned field: section 3.3.1 says a verifier MUST record the depth it actually checked and MUST set the status to `contraindicated` when evidence fails, and `models.Appraisal` carries the same point in a comment, "What this verifier ran, not what the issuer claimed." The adapter set it at record-construction time, before signing and before any verifier existed, and `__init__` had no parameter to override it. The result signed and verified, so a consumer reading the field to find out whether anybody checked was told yes by a record nobody had appraised. `TraceSandboxAdapter` already had this right, with `appraisal_status` defaulting to `"none"` and tests pinning both the default and the override; `TraceAGTAdapter` now matches it, and the defaulting-to-`affirming` line was the only remaining hardcoded status in the package. **This changes the content of records this adapter emits**: an unappraised record now says `none` where it used to say `affirming`, which is the correct direction and is what a caller who really did appraise must now declare with `appraisal_status="affirming"`. Two documents described the old behaviour and are corrected with it: `docs/integration/agt.md` said the adapter "populates an `affirming` appraisal without independently evaluating the session", and `docs/tutorials/agt-adapter.md` carried a post-hoc `record["appraisal"]["status"] = "none"` line, which is to say the gap was known well enough to be worked around in a tutorial rather than fixed in the adapter. That line is gone because the default now does it. Reported by @Yatsuiii in #331, who found it by comparing the two adapters.
@@ -3276,7 +3445,6 @@ Two cross-references that predate the renumbering which introduced section 3.3.1
 - **The revocation check no longer fails open when the store answers with a non-bool.** `RevocationStore` is `Container[str] | Callable[[str], bool]`, and the callable's return value was read by truthiness, so `None`, `""`, `0` and `[]` all read as "not revoked" and let the key through, while the string `"no"` read as revoked. `None` is the case that matters: it is what a CRL, status or SCITT lookup returns when its author handled the 200 and forgot every other response, which is exactly the outage the existing `except` clause was written to survive. That clause already treats a store that raises as a rejection, on the stated grounds that an unavailable source is not evidence a key is unrevoked; a store answering `None` supplied no more evidence and was being believed. `provenance.verify_record()` imports the same function and makes the same claim in its own docstring, so one fix closes both entry points. The membership branch is untouched, because `in` yields a real bool whatever `__contains__` returns.
 - **`provenance.verify_record()`, `provenance.check_tool_catalog()` and `content_marking.verify_assertion()` now hold their externally supplied argument to the type they document.** Each read that argument before establishing its shape. Measured across a twelve-value junk matrix, the two provenance functions leaked eleven `AttributeError`s apiece; the twelfth value is `{}`, which is an object and so reached the refusal each function documents, which is not the `ProvenanceError` `verify_record` documents. `content_marking.verify_assertion()` was worse than a crash rather than merely undocumented: it did not check that `record_bytes` were bytes, and `bytes(5)` is five zero bytes, so an int was hashed, failed to match, and the caller was told the record at the URL had changed, which is a specific and false accusation about somebody else's server. All three now raise the error their module documents, naming the type received.
 - **`jwk_thumbprint()` and `verify_record()` now refuse a non-object argument with the error they document.** Both read a member off the argument before establishing its shape, so a string, a number, `None`, a list or a bool raised `AttributeError`, which is not the `ValueError` `verify_record`'s docstring names for every rejection other than a bad signature, and is not caught by a caller written against that contract. Neither argument is one the caller has already established: a JWK reaches `jwk_thumbprint` from a peer, a key document or a record's own `cnf`, and the record handed to `verify_record` is by definition not yet known to be an object. Both now raise `ValueError` naming the type received. 21 tests: removing the two guards fails 20 of them, and the twenty-first is the control that has to keep passing.
-- **`sign.verify_record()` now validates `max_age_seconds` and `max_future_skew_seconds` the same way `provenance.verify_record()` does.** `provenance.verify_record()` rejects a malformed freshness bound via `_check_seconds()`, added per the review on #164. `sign.verify_record()`, the original Trust Record verifier, never received the same hardening: it checked only `max_future_skew_seconds < 0`, and `max_age_seconds` was compared against unvalidated. Passing `max_age_seconds=-1` (a value a caller might use meaning "no bound," since `None` is the documented way to disable the check) rejected every record, including one issued the same second, as `record is stale`, naming the record rather than the misconfigured argument. `_check_seconds()` is now defined once in `sign.py` and shared: `sign.verify_record()` calls it directly, and `provenance.verify_record()` imports it, passing its own `ProvenanceError` via a new `exc` parameter so each keeps its existing public error type.
 - **`provenance.tool_catalog_hash()` now refuses a malformed `tools` list instead of crashing.** Reached primarily through `check_tool_catalog(record, tools)`, the function the module's own docstring calls "the step that catches a live attack," because `tools` there is what the MCP server actually returned, i.e. the untrusted party this check exists to catch. The function iterated `tools` and called `.get(...)` on each entry with no check that `tools` was a list or that its entries were objects, so a malformed response (an entry that is a string, `None`, a number, or `tools` itself not being a list) raised an unhandled `AttributeError` or `TypeError` instead of the documented `ProvenanceError`. A server that is misbehaving maliciously or just buggily and is exactly the source `tools` has no reason to trust its shape. Fixed with an explicit `isinstance` check on `tools` and on each of its entries, naming the offending index.
 - **`content_marking.build_assertion()` and `content_marking.verify_assertion()` now refuse record bytes that aren't a JSON object, instead of crashing.** Both functions called `.get(...)` on the result of `json.loads(record_bytes)` without checking it was a dict first. Valid JSON is not always an object that is an array, a string, a number, `null`, and a bool are all valid top-level JSON and `record_bytes` is exactly the kind of externally-sourced input this is likely to happen to: `build_assertion()` takes whatever bytes a caller hands it, and `verify_assertion()`'s docstring is explicit that its `record_bytes` are "the record bytes actually retrieved from its URL," i.e. a network response the caller does not control. Either function raised an unhandled `AttributeError` instead of the documented `ContentMarkingError`. `verify_assertion()` had a second, related gap: its second parse of `record_bytes` (after the hash check) was not wrapped in the try/except its first parse-adjacent check uses, so genuinely malformed (non-JSON) bytes that happened to hash-match raised `json.JSONDecodeError` instead of `ContentMarkingError` too. Both functions now check `isinstance(record, dict)` after parsing, and `verify_assertion()`'s second parse now catches `ValueError` the same way its hash-computation path already implicitly required valid bytes to reach.
 - **`TraceAGTAdapter` now hashes `tool_transcript` the same way `TraceSandboxAdapter` does, and stopped rejecting ordinary floats.** The two adapters compute the same schema field, `tool_transcript.hash`, which `docs/schema.md` and `docs/integration/agt.md` both describe as "the canonical JSON of the ... AuditEntry list", canonical JSON meaning RFC 8785 (JCS) everywhere else in this codebase, and what `TraceSandboxAdapter.transcript_hash` already uses. `TraceAGTAdapter._transcript_hash` instead went through `anchor_bytes`, the registry-anchor sorted-key format that `spec/registry-anchor-v1.md` §0 scopes explicitly to the `transparency` anchor leaf, not to a hash carried inside the record. The prior "Fixed" entry above closed the out-of-range-integer gap between the two adapters by routing the AGT adapter through `anchor_bytes` rather than `rfc8785`, which stopped the collision but kept the two adapters on different canonicalizations and introduced a regression `anchor_bytes` carries for a different reason: it also refuses any non-integer number. A Cedar/AGT audit entry carrying an ordinary float that is a timestamp with fractional seconds, a decision latency, a risk score, all routine and could no longer be turned into a Trust Record at all; `build_trust_record` raised `UnanchorableValue` instead of returning one. `TraceAGTAdapter._transcript_hash` now uses `rfc8785.dumps`, matching its sibling exactly: same bytes hashed, same digest on identical input, same `rfc8785.IntegerDomainError` on an out-of-range integer, and no error at all on a float.
